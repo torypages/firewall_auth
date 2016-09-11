@@ -40,3 +40,4 @@
 * gnupg is a bit confusing as it is pretty distinct from this
 * must setup the keys and the gnupg home using GNU Privacy Guard
 * must sign key of users
+* `pip3 install imapclient` requires `sudo apt-get install libssl-dev`

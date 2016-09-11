@@ -35,3 +35,8 @@
 * only authorized pgp fingerprints are allowed
 * only emailing from authorized email addresses is allowed
 * all of this is simply an extra layer since the services that sit behind this would likely be secure on their own
+
+# gotchas
+* gnupg is a bit confusing as it is pretty distinct from this
+* must setup the keys and the gnupg home using GNU Privacy Guard
+* must sign key of users

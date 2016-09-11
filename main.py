@@ -65,12 +65,18 @@ def extract_msg(raw_msg_parts, uid):
     return msg, raw_msg_parts
 
 def test_fingerprint(fingerprint, gnupg_allowed_fingerprints):
+    '''
+    Raise exception if bad fingerprint
+    '''
     if fingerprint and not fingerprint in gnupg_allowed_fingerprints:
         raise Exception("Fingerprint not allowed")
     elif not fingerprint:
         raise Exception("No fingerprint")
 
 def extract_header_data(received_header):
+    '''
+    Get data from the header
+    '''
     logger.debug("Received Header:")
     logger.debug(str(received_header))
     ip = None
@@ -85,6 +91,9 @@ def extract_header_data(received_header):
     return ip, hostname 
 
 def text_to_consider(decrypted_data):
+    '''
+    Get the instructions to interpret
+    '''
     msg_text = str(decrypted_data.data, 'utf-8')
     lines = msg_text.splitlines()
     first_line = lines[0] if len(lines) else ''
@@ -97,6 +106,9 @@ def text_to_consider(decrypted_data):
     return first_line
 
 def extract_first_line_data(first_line):
+    '''
+    Get information from from first line
+    '''
     revoke = False
     ip = None
     logger.debug("First line: {}".format(first_line))
@@ -108,6 +120,9 @@ def extract_first_line_data(first_line):
     return revoke, ip
 
 def reconcile_ip(ip, fl_ip):
+    '''
+    Allow overriding header extracted IP with one supplied in instructions
+    '''
     if ip and fl_ip:
         logger.info("Overriding header IP {} with first line IP {}"
                     .format(ip, fl_ip))
@@ -117,6 +132,9 @@ def reconcile_ip(ip, fl_ip):
         return ip
 
 def apply_first_line_instructions(fl_revoke, first_line, ip):
+    '''
+    Act on the instructions making firewall changes
+    '''
     action_func = delete_rule if fl_revoke else add_rule
     apply_default = True
     for port in [22, 443]:
@@ -133,6 +151,9 @@ def apply_first_line_instructions(fl_revoke, first_line, ip):
         action_func(rule, force=False)
 
 def process_msg_data(data, uid):
+    '''
+    Process a single email
+    '''
     msg, raw_msg_parts  = extract_msg(data, uid)
     decrypted_data = gpg.decrypt(msg, passphrase=gnupg_passphrase)
     if not decrypted_data.status.lower() == 'decryption ok':
@@ -148,6 +169,9 @@ def process_msg_data(data, uid):
     logger.info("Done processing one message.")
  
 def base_fw_rules():
+    '''
+    General rules that should always be there
+    '''
     input_chain.flush()
     output_chain.flush()
     forward_chain.flush()
@@ -189,6 +213,9 @@ def base_fw_rules():
 
 
 def build_rule(ip, port, protocol):
+    '''
+    Create an iptables rule
+    '''
     rule = iptc.Rule()
     rule.src = ip
     rule.protocol = protocol
@@ -199,6 +226,9 @@ def build_rule(ip, port, protocol):
     return rule
 
 def action_rule(rule, action):
+    '''
+    Add or delete rule
+    '''
     action(rule)
     retry = 0
     while True:
@@ -208,6 +238,8 @@ def action_rule(rule, action):
             logger.info("Table commit success")
             break
         except iptc.ip4tc.IPTCError as e:
+            # Not sure if I really need this anymore. In an earlier iteration
+            # I think I was just having some concurrency issues.
             msg = str(e)
             if retry > 5:
                 logger.error("No more retries")
@@ -219,9 +251,15 @@ def action_rule(rule, action):
                 continue
 
 def rule_exists(rule):
+    '''
+    Check if rule exists
+    '''
     return rule in input_chain.rules
 
 def add_rule(rule, force=False):
+    '''
+    Add rule
+    '''
     if not rule_exists(rule) or force:
         logger.info("ADDING RULE: {}".format(rule))
         action = input_chain.append_rule
@@ -231,6 +269,9 @@ def add_rule(rule, force=False):
         logger.info(rule)
     
 def delete_rule(rule, force=False):
+    '''
+    Delete rule
+    '''
     if rule_exists(rule) or force:
         logger.info("DELETING RULE: {}".format(rule))
         action = input_chain.delete_rule
@@ -240,9 +281,15 @@ def delete_rule(rule, force=False):
         logger.info(rule)
 
 def randomness(x):
+    '''
+    Generate random string
+    '''
     return ''.join([random.choice(string.printable) for _ in range(x)])
 
 def send_email(to, contents):
+    '''
+    Send an email
+    '''
     if not to in smtp_allowed_outgoing:
         logger.error("{} not allowed as outgoing email".format(to))
         return
@@ -264,7 +311,10 @@ def send_email(to, contents):
     server.sendmail(email_username, to, str(encrypted_msg))
     server.quit()
 
-def process_mail2(imap):
+def process_mail(imap):
+    '''
+    Process mailbox folder
+    '''
     logger.info("Processing folder.")
     unseen = imap.search('UNSEEN')
     for uid in unseen:
@@ -274,7 +324,8 @@ def process_mail2(imap):
             from_address = email.utils.parseaddr(raw_msg_parts.get('from'))
             from_email = from_address[1]
             if from_email not in email_allowed_incoming:
-                raise Exception("From {} address not allowed".format(from_email))
+                raise Exception("From {} address not allowed"
+                                .format(from_email))
             process_msg_data(raw_msg_parts, uid)
             # but what success?
             send_email(from_email, 'success')
@@ -294,20 +345,23 @@ def process_mail2(imap):
             imap.add_flags(uid, '\SEEN')
 
 def listen():
+    '''
+    Listen for IMAP events
+    '''
     import eventlet
     imapclient = eventlet.import_patched('imapclient')
     while True:
         imap = imapclient.IMAPClient(email_server, use_uid=True, ssl=True)
         result = imap.login(email_username, email_password)
         result = imap.select_folder('INBOX')
-        process_mail2(imap)
+        process_mail(imap)
         logger.info("Done initial process, starting monitoring")
         while True:
             imap.idle()
             result = imap.idle_check(5 * 60)
             if result:
                 imap.idle_done()
-                process_mail2(imap)
+                process_mail(imap)
             else:
                 imap.idle_done()
                 imap.noop()
@@ -342,6 +396,12 @@ if __name__ == '__main__':
     elif args.send_email:
         send_email(smtp_allowed_outgoing[0], 'cool')
     else:
-        base_fw_rules()
-        listen()
-
+        while True:
+            # Just to be super durable
+            try:
+                base_fw_rules()
+                listen()
+            except Exception as e:
+                logger.error(e)
+                logger.error("This should never happen.")
+                time.sleep(60)

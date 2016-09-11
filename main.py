@@ -204,6 +204,14 @@ def base_fw_rules():
     rule.add_match(match)
     output_chain.append_rule(rule)
 
+    rule = iptc.Rule()
+    rule.src = '192.168.1.0/24'
+    rule.protocol = 'tcp'
+    match = iptc.Match(rule, 'tcp')
+    rule.add_match(match)
+    rule.target = iptc.Target(rule, "ACCEPT")
+    input_chain.append_rule(rule)
+
     input_chain.set_policy('DROP')
     output_chain.set_policy('ACCEPT')
     forward_chain.set_policy('DROP')
